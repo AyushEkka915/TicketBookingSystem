@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
@@ -130,5 +132,24 @@ public class CustomQueue {
             current = current.getNext();
             position++;
         }
+    }
+
+    /**
+     * Returns a snapshot of the queued bookings in front-to-rear order.
+     *
+     * A new list is created, so changing it cannot modify the queue. The
+     * bookings themselves are shared references, which is intentional: a
+     * status change on a booking must be visible everywhere.
+     *
+     * @return list of waiting bookings, oldest first
+     */
+    public List<Booking> toList() {
+        List<Booking> snapshot = new ArrayList<>(size);
+        QueueNode current = front;
+        while (current != null) {
+            snapshot.add(current.getBooking());
+            current = current.getNext();
+        }
+        return snapshot;
     }
 }
