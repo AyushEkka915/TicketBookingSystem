@@ -239,7 +239,7 @@ public class TicketBookingSystem {
     }
 
     public List<Booking> getWaitingBookings() {
-        return bookings.getByStatus(BookingStatus.WAITING);
+        return waitingList.toList();
     }
 
     public List<Booking> getCancelledBookings() {
@@ -269,11 +269,82 @@ public class TicketBookingSystem {
         actionHistory.displayHistory();
     }
 
+    // ------------------------------------------------------------------
+    // Cancellation and promotion
+    // ------------------------------------------------------------------
+
+    /**
+     * Cancels a confirmed booking.
+     *
+     * Only CONFIRMED bookings can be cancelled. WAITING and CANCELLED bookings
+     * cannot be cancelled. Tickets are released and waiting-list promotion is
+     * attempted after cancellation.
+     *
+     * @param bookingId the booking to cancel
+     * @return the cancelled booking
+     * @throws IllegalArgumentException if booking not found
+     * @throws IllegalStateException    if booking is not CONFIRMED
+     */
+    public Booking cancelBooking(String bookingId) {
+        Booking booking = bookings.findById(bookingId);
+        if (booking == null) {
+            throw new IllegalArgumentException("Booking not found: " + bookingId);
+        }
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new IllegalStateException("Booking already cancelled: " + bookingId);
+        }
+        if (booking.getStatus() == BookingStatus.WAITING) {
+            throw new IllegalStateException("Cannot cancel a waiting booking: " + bookingId);
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new IllegalStateException("Cannot cancel booking with status: " + booking.getStatus());
+        }
+
+        // Cancel the booking and release tickets
+        booking.updateStatus(BookingStatus.CANCELLED);
+        availableTickets += booking.getTicketsRequested();
+        recordAction("Cancelled booking " + booking.getBookingId() + " for "
+                + booking.getCustomerId() + " (" + booking.getTicketsRequested() + " ticket(s))");
+
+        // Attempt to promote eligible waiting requests (strict FIFO)
+        promoteFromWaitingList();
+
+        return booking;
+    }
+
+    /**
+     * Promotes eligible waiting requests in strict FIFO order.
+     *
+     * Only the front of the queue is checked. If it fits, it is promoted to
+     * CONFIRMED, removed from the queue, and tickets are deducted. The loop
+     * continues to check the new front in case more tickets are available.
+     * If the front does not fit, promotion stops (no skipping).
+     */
+    private void promoteFromWaitingList() {
+        while (!waitingList.isEmpty()) {
+            Booking front = waitingList.peek();
+            if (front == null) {
+                break;
+            }
+            if (front.getTicketsRequested() <= availableTickets) {
+                // Promote front
+                Booking promoted = waitingList.dequeue();
+                promoted.updateStatus(BookingStatus.CONFIRMED);
+                availableTickets -= promoted.getTicketsRequested();
+                recordAction("Promoted booking " + promoted.getBookingId() + " to CONFIRMED ("
+                        + promoted.getTicketsRequested() + " ticket(s))");
+                // Continue loop to check new front
+            } else {
+                break; // front does not fit, stop (strict FIFO)
+            }
+        }
+    }
+
     private void recordAction(String message) {
         try {
             actionHistory.push(message);
         } catch (IllegalStateException ignored) {
-            // If the history is full, do not let logging block a successful booking.
+            // If the history is full, do not let logging block a successful operation.
         }
     }
 }
